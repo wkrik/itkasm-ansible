@@ -1,0 +1,109 @@
+---
+##################################################################
+### ITKASM Ansible Install
+### This sample playbook installs the  ITKASM.com Management Tool
+###    Installs CentOS packages and perl modules
+###    Downloads itkasm-ansible.tar from GitHub
+###    Extracts a tarball
+###    Installs ITKASM
+###    Sets ownership and permissions
+###    copies and symlinks files 
+###    configure settings
+###    stops/starts services
+###
+### By Kirk Waingrow
+###
+### Tested on CentOS 7.2
+##################################################################
+
+- hosts: hosteast, hostwest
+  become: true
+  vars:
+     package: [ 'perl-App-cpanminus', 'cpan', 'unzip', 'vim', 'tar', 'git', 'make', 'gcc', 'bzip2', 'bzip2-devel', 'zlib', 'zlib-devel', 'perl', 'httpd' ]
+
+     cpanMods: [ 'IO::Socket', 'URI', 'LWP', 'CGI', 'HTML::Entities', 'Tie::File', 'Crypt::Simple', 'Spreadsheet::WriteExcel', 'File::Basename', 'Calendar::Any' ]
+
+  tasks:
+
+  - name: Distribution
+    debug: msg="{{ ansible_distribution }}"
+  - name: Distribution version
+    debug: msg="{{ ansible_distribution_version}}"
+
+  - name: install required packages
+    yum: name={{ item }} state=latest
+    loop: "{{ package }}"
+
+#  - name: update all packages
+#    yum: name='*' state=latest
+
+  - name: downloading Perl Modules
+    cpanm: name={{ item }}
+    loop: "{{ cpanMods }}" 
+  
+  - name: ensure clean repository
+    file:
+      state: absent
+      path: "/root/itkasm-ansible"
+
+  - name: ensure clean tmp
+    file:
+      state: absent
+      path: "/tmp/itkasm-ansible"
+
+  - name: ensure clean itkasm install
+    file:
+      state: absent
+      path: "/opt/itkasm"
+
+  - name: git itask-ansible 
+    shell: git clone git://github.com/wkrik/itkasm-ansible.git
+
+
+# ansible.builtin.unarchive: DOES NOT WORK - has issues with gtar
+  - name: extract itkasm 
+    shell: tar xf itkasm-ansible/itkasm-ansible.tar -C /tmp
+
+  - name: installing itkasm
+    shell: /tmp/itkasm-ansible/install
+
+  - name: set owner permissions
+    file: 
+         dest="/opt/itkasm"
+         owner=apache 
+         group=apache 
+         mode=u=rwx,g=rwx,o=rx 
+         recurse=yes
+   
+  - name: stop service httpd, in all cases
+    ansible.builtin.service:
+      name: httpd
+      state: stopped
+
+  - name: backup httpd.conf
+    shell: cp /etc/httpd/conf/httpd.conf /etc/httpd/conf/httpd.conf.O
+   
+  - name: copy httpd.conf with script alias
+    shell: cp /tmp/itkasm-ansible/tmp/httpd.conf /etc/httpd/conf
+
+
+  - name: create www symbolic link 
+    file:
+     src: "/opt/itkasm/www"
+     dest: "/var/www/html/itkasm"
+     state: link
+
+  - name: create images symbolic link 
+    file:
+     src: "/opt/itkasm/images"
+     dest: "/opt/itkasm/www/images"
+     state: link
+
+
+  - name: restart service httpd, in all cases
+    ansible.builtin.service:
+      name: httpd
+      state: restarted
+
+  - name: DONE. USE A BROWSER TO HIT http://server/itkasm
+    command: echo 
